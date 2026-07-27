@@ -1,0 +1,89 @@
+// Vercel serverless function: files an in-app "Modification Request" as a
+// GitHub issue on Anaskba/aic-attendance (label: modification-request).
+// Requires the GITHUB_TOKEN environment variable (repo Issues write access).
+
+const REPO = 'Anaskba/aic-attendance';
+const MAX_COMMENT = 4000;
+const MAX_BODY_BYTES = 16 * 1024;
+const ALLOWED_ORIGIN = 'https://aic-attendance.vercel.app';
+
+// Best-effort per-IP throttle (in-memory, per warm instance): 5 requests / 10 min.
+const hits = new Map<string, number[]>();
+const throttled = (ip: string): boolean => {
+  const now = Date.now();
+  const windowStart = now - 10 * 60 * 1000;
+  const recent = (hits.get(ip) ?? []).filter(t => t > windowStart);
+  recent.push(now);
+  hits.set(ip, recent);
+  if (hits.size > 1000) hits.clear(); // memory guard
+  return recent.length > 5;
+};
+
+export default async function handler(req: any, res: any) {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'method-not-allowed' });
+    return;
+  }
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    res.status(500).json({ error: 'server-not-configured' });
+    return;
+  }
+  // only the app itself may call this endpoint (browsers send Origin on JSON POSTs)
+  const origin = String(req.headers?.origin ?? '');
+  if (origin !== ALLOWED_ORIGIN && !origin.endsWith('-anaskba-projects.vercel.app')) {
+    res.status(403).json({ error: 'forbidden-origin' });
+    return;
+  }
+  if (Number(req.headers?.['content-length'] ?? 0) > MAX_BODY_BYTES) {
+    res.status(413).json({ error: 'payload-too-large' });
+    return;
+  }
+  const ip = String(req.headers?.['x-forwarded-for'] ?? 'unknown').split(',')[0].trim();
+  if (throttled(ip)) {
+    res.status(429).json({ error: 'too-many-requests' });
+    return;
+  }
+
+  const { name, role, screen, comment, lang } = (req.body ?? {}) as Record<string, string>;
+  const text = String(comment ?? '').trim();
+  if (text.length < 5) {
+    res.status(400).json({ error: 'comment-too-short' });
+    return;
+  }
+
+  const firstLine = text.split('\n')[0].slice(0, 70);
+  const body = [
+    `**Requested by:** ${String(name ?? 'anonymous').slice(0, 80)}`,
+    `**Role:** ${String(role ?? '-').slice(0, 80)}`,
+    `**Screen:** ${String(screen ?? '-').slice(0, 80)}`,
+    `**UI language:** ${lang === 'ar' ? 'Arabic' : 'English'}`,
+    `**Submitted:** ${new Date().toISOString()}`,
+    '',
+    '---',
+    '',
+    text.slice(0, MAX_COMMENT),
+  ].join('\n');
+
+  const gh = await fetch(`https://api.github.com/repos/${REPO}/issues`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'aic-attendance-mod-request',
+    },
+    body: JSON.stringify({
+      title: `[Modification Request] ${firstLine}`,
+      body,
+      labels: ['modification-request'],
+    }),
+  });
+
+  if (!gh.ok) {
+    res.status(502).json({ error: 'github-error', status: gh.status });
+    return;
+  }
+  const issue = await gh.json();
+  res.status(200).json({ ok: true, number: issue.number });
+}
