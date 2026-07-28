@@ -84,6 +84,6 @@ export default async function handler(req: any, res: any) {
     res.status(502).json({ error: 'github-error', status: gh.status });
     return;
   }
-  const issue = await gh.json();
+  const issue = (await gh.json()) as { number: number };
   res.status(200).json({ ok: true, number: issue.number });
 }
