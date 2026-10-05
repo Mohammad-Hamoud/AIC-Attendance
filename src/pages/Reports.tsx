@@ -81,8 +81,7 @@ export default function Reports() {
         // FR-42 casual timesheet template
         const headers = [t('iqama'), t('empName'), t('supplier'), t('supervisor'), t('religion'), 'CC', t('dept'),
           t('date'), t('status'), t('in'), t('out'), t('shiftName'), t('shiftIn'), t('shiftOut'), t('shortageHours'),
-          t('totalHours'), t('lateIn'), t('excusedLate'), t('paidHours'), t('completionPct'),
-          t('earlyOut'), t('incentive'), t('ot'), t('calculatedDailySalary'),
+          t('totalHours'), t('lateIn'), t('earlyOut'), t('incentive'), t('ot'), t('calculatedDailySalary'),
           t('manualTag'), t('editReason')];
         const rows: (string | number)[][] = [];
         for (const c of casuals) {
@@ -92,7 +91,6 @@ export default function Reports() {
               c.costCenter, c.dept, fmtDate(d.day), statusText(d),
               fmtTime(d.inT), fmtTime(d.outT), d.shiftCode ?? t('dayOff'),
               fmtTime(d.shiftStart), fmtTime(d.shiftEnd), fmtDur(d.shortage), fmtDur(d.worked), fmtDur(d.lateIn),
-              d.excusedLate, fmtDur(d.paid), `${Math.round(d.completion * 100)}%`,
               fmtDur(d.earlyOut), incentives[c.iqama] ?? 0, fmtDur(d.otMin), d.dailyPay.toFixed(2),
               manualLabel(d), reasonOf(c.iqama, d.day)]);
           }
@@ -102,13 +100,12 @@ export default function Reports() {
       case 'casualSummary': {
         // FR-42 period summary incl. total salary
         const headers = [t('iqama'), t('empName'), t('supplier'), 'CC', t('dept'), t('jobTitle'),
-          t('totalShortage'), t('totalLateIn'), t('excusedLate'), t('totalEarlyOut'), t('ot'), t('attendancePay'),
+          t('totalShortage'), t('totalLateIn'), t('totalEarlyOut'), t('ot'), t('attendancePay'),
           t('incentive'), t('deduction'), t('totalSalary')];
         const rows = casuals.map(c => {
           const sum = casualSummaries.get(c.iqama)!;
           return [c.iqama, name(c), c.supplier, c.costCenter, c.dept, c.jobTitle,
-            fmtDur(sum.totalShortage), fmtDur(sum.totalLateIn), sum.totalExcusedLate,
-            fmtDur(sum.totalEarlyOut), fmtDur(sum.totalOt),
+            fmtDur(sum.totalShortage), fmtDur(sum.totalLateIn), fmtDur(sum.totalEarlyOut), fmtDur(sum.totalOt),
             sum.attendancePay.toFixed(2), sum.incentive, sum.deduction.toFixed(2), sum.totalSalary.toFixed(2)];
         });
         return { headers, rows };

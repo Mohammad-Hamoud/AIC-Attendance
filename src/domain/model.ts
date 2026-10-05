@@ -73,13 +73,6 @@ export interface RamadanWindow { fromDay: number; toDay: number }
 
 export interface Config {
   graceMin: number;            // BR-11: 30
-  /**
-   * Casual pay grace. Arriving this many minutes late or less is paid in full;
-   * one minute over and every late minute counts, not only the ones past the
-   * grace. Separate from graceMin, which decides whether a day is *flagged*
-   * late and governs the FTE side too.
-   */
-  casualLateGraceMin: number;
   otCapMin: number;            // BR-06(d): 240
   ramadan: RamadanWindow | null;
   holidays: Holiday[];
@@ -93,7 +86,6 @@ export interface Config {
 
 export const defaultConfig = (): Config => ({
   graceMin: 30,
-  casualLateGraceMin: 15,
   otCapMin: 240,
   ramadan: null,
   holidays: [{ day: 3, name: 'Eid Al-Adha (observed, demo)', nameAr: 'عيد الأضحى (تجريبي)' }],
