@@ -107,11 +107,15 @@ export default function Admin() {
             <label>{t('gracePeriod')}</label>
             <input type="number" value={cfg.graceMin} min={0} max={120} style={{ width: 80 }}
               onChange={e => setCfg({ ...cfg, graceMin: Number(e.target.value) })} />
+            <label>{t('casualPayGrace')}</label>
+            <input type="number" value={cfg.casualLateGraceMin} min={0} max={120} style={{ width: 80 }}
+              onChange={e => setCfg({ ...cfg, casualLateGraceMin: Number(e.target.value) })} />
             <label>{t('otCap')}</label>
             <input type="number" value={cfg.otCapMin} min={0} max={480} step={30} style={{ width: 80 }}
               onChange={e => setCfg({ ...cfg, otCapMin: Number(e.target.value) })} />
           </div>
           <div className="note">BR-11 · FR-16 — {t('correctionsNote')}</div>
+          <div className="note">{t('casualPayGraceNote')}</div>
         </div>
 
         <div className="panel">

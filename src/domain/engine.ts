@@ -337,6 +337,9 @@ export interface CasualDayResult {
   outT: number | null;
   worked: number;
   lateIn: number;
+  excusedLate: number;    // late minutes handed back by the pay grace
+  paid: number;           // minutes the day is paid for: counted time + excused
+  completion: number;     // paid ÷ required, capped at 1
   earlyOut: number;
   shortage: number;
   otMin: number;          // OT hours flagged (Ramadan-Muslim 10+2 or holiday day)
@@ -363,7 +366,8 @@ export function computeCasual(
     const r: CasualDayResult = {
       iqama: c.iqama, day, status: s.outT === null ? 'missing-out' : 'worked',
       shiftCode: si.def.code, shiftStart: si.start, shiftEnd: si.end,
-      inT: s.inT, outT: s.outT, worked: 0, lateIn: 0, earlyOut: 0, shortage: 0,
+      inT: s.inT, outT: s.outT, worked: 0, lateIn: 0, excusedLate: 0, paid: 0,
+      completion: 0, earlyOut: 0, shortage: 0,
       otMin: 0, holidayWork: holiday, dailyPay: 0,
       inManual: s.inSrc === 'manual', outManual: s.outSrc === 'manual',
     };
@@ -374,25 +378,38 @@ export function computeCasual(
       r.lateIn = s.inT > si.start + cfg.graceMin ? s.inT - si.start : 0;
       r.earlyOut = s.outT < si.end ? si.end - s.outT : 0;
 
+      // Inside the pay grace the late minutes are handed back, so the day counts
+      // as if they had been worked. One minute over and none of them are.
+      const late = Math.max(0, s.inT - si.start);
+      r.excusedLate = late > 0 && late <= cfg.casualLateGraceMin ? late : 0;
+      const paid = ov + r.excusedLate;
+
       const ramMuslim = inRamadan(day, cfg) && c.religion === 'muslim';
       if (ramMuslim) {
         // BR-08: first 10h normal, next 2h OT ×1.5
         const normalMin = 600;
-        r.shortage = Math.max(0, normalMin - Math.min(ov, normalMin));
+        r.paid = Math.min(paid, normalMin);
+        r.completion = r.paid / normalMin;
+        r.shortage = Math.max(0, normalMin - r.paid);
         r.otMin = floor30(Math.min(Math.max(0, worked - normalMin), 120));
         // pay for up to 10 normal hours at the 12h-day hourly rate + OT premium
         const hourly = dailyRate / 12;
-        r.dailyPay = (Math.min(ov, normalMin) / 60) * hourly + (r.otMin / 60) * hourly * 1.5;
+        r.dailyPay = (r.paid / 60) * hourly + (r.otMin / 60) * hourly * 1.5;
+      } else if (holiday) {
+        r.otMin = floor30(worked); // flagged; pay = 1.5 × daily rate (FR-31)
+        r.dailyPay = dailyRate * 1.5;
+        r.lateIn = 0; r.earlyOut = 0; r.shortage = 0;
+        r.excusedLate = 0;
+        r.paid = si.def.required;
+        r.completion = 1;
+        r.status = 'holiday-worked';
       } else {
-        r.shortage = Math.max(0, si.def.required - ov);
-        if (holiday) {
-          r.otMin = floor30(worked); // flagged; pay = 1.5 × daily rate (FR-31)
-          r.dailyPay = dailyRate * 1.5;
-          r.lateIn = 0; r.earlyOut = 0; r.shortage = 0;
-          r.status = 'holiday-worked';
-        } else {
-          r.dailyPay = dailyRate; // full attendance day
-        }
+        // The day is paid for the hours it is credited with, never beyond a full
+        // day — a short day costs the difference, an over-long one is capped.
+        r.paid = paid;
+        r.completion = si.def.required > 0 ? Math.min(paid / si.def.required, 1) : 1;
+        r.shortage = Math.max(0, si.def.required - paid);
+        r.dailyPay = dailyRate * r.completion;
       }
       r.dailyPay = Math.round(r.dailyPay * 100) / 100;
     }
@@ -407,7 +424,8 @@ export function computeCasual(
     results.push({
       iqama: c.iqama, day, status: dayOff ? 'day-off' : 'absent',
       shiftCode: null, shiftStart: null, shiftEnd: null, inT: null, outT: null,
-      worked: 0, lateIn: 0, earlyOut: 0, shortage: 0, otMin: 0, holidayWork: false,
+      worked: 0, lateIn: 0, excusedLate: 0, paid: 0, completion: dayOff ? 1 : 0,
+      earlyOut: 0, shortage: 0, otMin: 0, holidayWork: false,
       dailyPay: dayOff ? Math.round(dailyRate * 100) / 100 : 0, // BR-13: assigned day-off paid in full
       inManual: false, outManual: false,
     });
@@ -427,6 +445,7 @@ export interface CasualSummary {
   totalSalary: number;
   totalShortage: number;
   totalLateIn: number;
+  totalExcusedLate: number;  // late minutes the grace paid for anyway
   totalEarlyOut: number;
   totalOt: number;
   daysWorked: number;
@@ -445,6 +464,7 @@ export function summarizeCasual(
     totalSalary: Math.round((attendancePay + incentive - deduction) * 100) / 100,
     totalShortage: days.reduce((s, d) => s + d.shortage, 0),
     totalLateIn: days.reduce((s, d) => s + d.lateIn, 0),
+    totalExcusedLate: days.reduce((s, d) => s + d.excusedLate, 0),
     totalEarlyOut: days.reduce((s, d) => s + d.earlyOut, 0),
     totalOt: days.reduce((s, d) => s + d.otMin, 0),
     daysWorked: days.filter(d => d.status === 'worked' || d.status === 'holiday-worked').length,
